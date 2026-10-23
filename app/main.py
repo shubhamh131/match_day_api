@@ -7,6 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
+from app.football_client import fetch_fixtures, to_fixture
+
 from app.database import get_db
 from app.models import Team
 
@@ -44,6 +46,17 @@ class TeamRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FixtureRead(BaseModel):
+    match_id: int
+    date: datetime
+    competition: str
+    status: str
+    home_team: str
+    away_team: str
+    home_score: int | None
+    away_score: int | None
+
+
 @app.post("/teams", status_code=201, response_model=TeamRead)
 def create_team(team: TeamCreate, db: Session = Depends(get_db)):
     new_team = Team(**team.model_dump())
@@ -62,9 +75,11 @@ def list_teams(db: Session = Depends(get_db)):
     return db.scalars(select(Team).order_by(Team.id)).all()
 
 
-@app.get("/teams/{team_id}", response_model=TeamRead)
-def get_team(team_id: int, db: Session = Depends(get_db)):
-    return find_team(team_id, db)
+@app.get("/teams/{team_id}/fixtures", response_model=list[FixtureRead])
+async def get_fixtures(team_id: int, db: Session = Depends(get_db)):
+    team = find_team(team_id, db)
+    matches = await fetch_fixtures(team.external_team_id)
+    return [to_fixture(m) for m in matches]
 
 
 def find_team(team_id: int, db: Session = Depends(get_db)) -> Team:
