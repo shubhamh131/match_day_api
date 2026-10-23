@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.database import get_db
 from app.models import Team
@@ -55,39 +56,35 @@ def create_team(team: TeamCreate, db: Session = Depends(get_db)):
     return new_team
 
 
-@app.get("/teams")
-def list_teams():
-    return teams
+@app.get("/teams", response_model=list[TeamRead])
+def list_teams(db: Session = Depends(get_db)):
+    return db.scalars(select(Team).order_by(Team.id)).all()
 
 
-@app.get("/teams/{team_id}")
-def get_team(team_id: int):
-    for team in teams:
-        if team["id"] == team_id:
-            return team
-    raise HTTPException(status_code=404, detail="Team not found")
+@app.get("/teams/{team_id}", response_model=TeamRead)
+def get_team(team_id: int, db: Session = Depends(get_db)):
+    return find_team(team_id, db)
 
 
-def find_team(team_id: int) -> dict:
-    for team in teams:
-        if team["id"] == team_id:
-            return team
-    raise HTTPException(status_code=404, detail="Team not found")
+def find_team(team_id: int, db: Session = Depends(get_db)) -> Team:
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="team not found")
+    return team
 
 
-@app.get("/teams/{team_id}")
-def get_team(team_id: int):
-    return find_team(team_id)
-
-
-@app.patch("/teams/{team_id}")
-def update_team(team_id: int, update: TeamUpdate):
-    team = find_team(team_id)
-    team.update(update.model_dump(exclude_unset=True))
+@app.patch("/teams/{team_id}", response_model=TeamRead)
+def update_team(team_id: int, update: TeamUpdate, db: Session = Depends(get_db)):
+    team = find_team(team_id, db)
+    for field, value in update.model_dump(exclude_unset=True).items():
+        setattr(team, field, value)
+    db.commit()
+    db.refresh(team)
     return team
 
 
 @app.delete("/teams/{team_id}", status_code=204)
-def delete_team(team_id: int):
-    team = find_team(team_id)
-    teams.remove(team)
+def delete_team(team_id: int, db: Session = Depends(get_db)):
+    team = find_team(team_id, db)
+    db.delete(team)
+    db.commit()
