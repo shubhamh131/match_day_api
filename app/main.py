@@ -95,8 +95,3 @@ def delete_team(team_id: int, db: Session = Depends(get_db)):
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-
-@app.get("/boom")
-def boom():
-    raise RuntimeError("test crash")
