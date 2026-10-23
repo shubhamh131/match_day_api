@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from app.config import settings
 
-DATABASE_URL = "postgresql+psycopg://football:football@localhost:5432/football_fixture"
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine)
 
 
