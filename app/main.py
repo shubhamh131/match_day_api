@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 import logging
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -10,11 +11,30 @@ from sqlalchemy import select
 from app.football_client import fetch_fixtures, to_fixture
 from app.football_client import FootballAPIError
 
+from app.logging_config import setup_logging
+
 from app.database import get_db
 from app.models import Team
 
+setup_logging()
+
 app = FastAPI()
 logger = logging.getLogger("football_fixture")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "%s %s -> %s (%.0f ms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 
 # @app.get("/")

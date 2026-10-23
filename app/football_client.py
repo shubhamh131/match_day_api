@@ -39,7 +39,13 @@ async def fetch_fixtures(external_team_id: int, limit: int = 5) -> list[dict]:
     except httpx.RequestError:
         logger.error("could not reach football-data.org")
         raise FootballAPIError(502, "Could not reach fixtures provider")
-    return response.json()["matches"]
+        matches = response.json()["matches"]
+        logger.info(
+            "football-data.org returned %d matches for team %s",
+            len(matches),
+            external_team_id,
+        )
+        return matches
 
 
 def to_fixture(match: dict) -> dict:
