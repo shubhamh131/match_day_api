@@ -1,5 +1,12 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import Team
 
 app = FastAPI()
 teams: list[dict] = []
@@ -25,13 +32,26 @@ class TeamUpdate(BaseModel):
     notes: str | None = None
 
 
-@app.post("/teams")
-@app.post("/teams", status_code=201)
-def create_team(team: TeamCreate):
-    global next_id
-    new_team = {"id": next_id, **team.model_dump()}
-    teams.append(new_team)
-    next_id += 1
+class TeamRead(BaseModel):
+    id: int
+    name: str
+    external_team_id: int
+    notes: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@app.post("/teams", status_code=201, response_model=TeamRead)
+def create_team(team: TeamCreate, db: Session = Depends(get_db)):
+    new_team = Team(**team.model_dump())
+    db.add(new_team)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Team already followed")
+    db.refresh(new_team)
     return new_team
 
 
