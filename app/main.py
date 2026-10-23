@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.football_client import fetch_fixtures, to_fixture
+from app.football_client import FootballAPIError
 
 from app.database import get_db
 from app.models import Team
@@ -104,6 +105,11 @@ def delete_team(team_id: int, db: Session = Depends(get_db)):
     team = find_team(team_id, db)
     db.delete(team)
     db.commit()
+
+
+@app.exception_handler(FootballAPIError)
+async def football_api_error_handler(request: Request, exc: FootballAPIError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
 @app.exception_handler(Exception)
