@@ -1,23 +1,30 @@
-from datetime import datetime
-import time
 import logging
-from fastapi import Depends, FastAPI, HTTPException, Request
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlalchemy import select
-
-from app.football_client import fetch_fixtures, to_fixture
-from app.football_client import FootballAPIError
-
-from app.logging_config import setup_logging
 
 from app.database import engine, get_db
+from app.football_client import (
+    FootballAPIError,
+    fetch_fixtures,
+    fetch_scorers,
+    fetch_standings,
+    to_fixture,
+    to_standing,
+)
+from app.logging_config import setup_logging
 from app.models import Base, Team
-from contextlib import asynccontextmanager
 
 setup_logging()
+logger = logging.getLogger("football_fixture")
 
 
 @asynccontextmanager
@@ -28,7 +35,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-logger = logging.getLogger("football_fixture")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
@@ -46,14 +59,7 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# @app.get("/")
-# def root():
-#     print("welcome to the site")
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+# ---------- schemas ----------
 
 
 class TeamCreate(BaseModel):
@@ -87,6 +93,46 @@ class FixtureRead(BaseModel):
     away_score: int | None
 
 
+class StandingRead(BaseModel):
+    position: int
+    team: str
+    played: int
+    won: int
+    draw: int
+    lost: int
+    goals_for: int
+    goals_against: int
+    goal_difference: int
+    points: int
+
+
+class ScorerRead(BaseModel):
+    player: str
+    team: str
+    goals: int
+    played: int
+    assists: int | None
+    penalties: int | None
+
+
+# ---------- helpers ----------
+
+
+def find_team(team_id: int, db: Session) -> Team:
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return team
+
+
+# ---------- routes ----------
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.post("/teams", status_code=201, response_model=TeamRead)
 def create_team(team: TeamCreate, db: Session = Depends(get_db)):
     new_team = Team(**team.model_dump())
@@ -105,18 +151,9 @@ def list_teams(db: Session = Depends(get_db)):
     return db.scalars(select(Team).order_by(Team.id)).all()
 
 
-@app.get("/teams/{team_id}/fixtures", response_model=list[FixtureRead])
-async def get_fixtures(team_id: int, db: Session = Depends(get_db)):
-    team = find_team(team_id, db)
-    matches = await fetch_fixtures(team.external_team_id)
-    return [to_fixture(m) for m in matches]
-
-
-def find_team(team_id: int, db: Session = Depends(get_db)) -> Team:
-    team = db.get(Team, team_id)
-    if team is None:
-        raise HTTPException(status_code=404, detail="team not found")
-    return team
+@app.get("/teams/{team_id}", response_model=TeamRead)
+def get_team(team_id: int, db: Session = Depends(get_db)):
+    return find_team(team_id, db)
 
 
 @app.patch("/teams/{team_id}", response_model=TeamRead)
@@ -136,6 +173,34 @@ def delete_team(team_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+@app.get("/teams/{team_id}/fixtures", response_model=list[FixtureRead])
+async def get_fixtures(team_id: int, db: Session = Depends(get_db)):
+    team = find_team(team_id, db)
+    matches = await fetch_fixtures(team.external_team_id)
+    return [to_fixture(m) for m in matches]
+
+
+@app.get("/competitions/ucl/standings", response_model=list[StandingRead])
+async def get_ucl_standings(limit: int = Query(20, ge=1, le=36)):
+    table = await fetch_standings("CL")
+    return [to_standing(row) for row in table[:limit]]
+
+
+@app.get("/competitions/ucl/scorers", response_model=list[ScorerRead])
+async def get_ucl_scorers(limit: int = Query(10, ge=1, le=20)):
+    scorers = await fetch_scorers("CL", limit)
+    return [to_scorer(scorer) for scorer in scorers]
+
+
+@app.get("/competitions/{competition}/scorers", response_model=list[ScorerRead])
+async def get_scorers(competition: str = "CL", limit: int = Query(10, ge=1, le=50)):
+    scorers = await fetch_scorers(competition, limit)
+    return [to_scorer(scorer) for scorer in scorers]
+
+
+# ---------- error handlers ----------
+
+
 @app.exception_handler(FootballAPIError)
 async def football_api_error_handler(request: Request, exc: FootballAPIError):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
@@ -145,3 +210,16 @@ async def football_api_error_handler(request: Request, exc: FootballAPIError):
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+def to_scorer(s: dict) -> dict:
+    return {
+        "player": s["player"]["name"],
+        "team": s["team"]["name"],
+        "goals": s["goals"],
+        "played": s["playedMatches"],
+        "assists": s["assists"],
+        "penalties": s["penalties"],
+    }
+
+
