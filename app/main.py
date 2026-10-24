@@ -13,8 +13,9 @@ from app.football_client import FootballAPIError
 
 from app.logging_config import setup_logging
 
-from app.database import get_db
-from app.models import Team
+from app.database import engine, get_db
+from app.models import Base, Team
+from contextlib import asynccontextmanager
 
 setup_logging()
 
