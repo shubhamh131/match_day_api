@@ -19,7 +19,15 @@ from contextlib import asynccontextmanager
 
 setup_logging()
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(engine)
+    logger.info("database tables ready")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 logger = logging.getLogger("football_fixture")
 
 
