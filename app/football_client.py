@@ -26,9 +26,32 @@ async def _get(path: str, params: dict | None = None) -> dict:
     except httpx.TimeoutException:
         logger.error("football-data.org timed out for %s", path)
         raise FootballAPIError(504, "Football data provider timed out")
+
     except httpx.HTTPStatusError as exc:
         upstream = exc.response.status_code
+        body = exc.response.text[:500]
+
+        logger.error(
+            "football-data.org returned %s for %s. Response: %s",
+            upstream,
+            path,
+            body,
+        )
+
+        if upstream == 429:
+            raise FootballAPIError(
+                503,
+                "Football data provider rate limit reached, try again later",
+            )
+
+        raise FootballAPIError(
+            502,
+            "Football data provider returned an error",
+        )
+
+        upstream = exc.response.status_code
         logger.error("football-data.org returned %s for %s", upstream, path)
+
         if upstream == 429:
             raise FootballAPIError(
                 503, "Football data provider rate limit reached, try again later"
