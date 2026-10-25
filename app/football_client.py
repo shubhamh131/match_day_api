@@ -11,10 +11,12 @@ class FootballAPIError(Exception):
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
         self.detail = detail
+        super().__init__(detail)
 
 
 async def _get(path: str, params: dict | None = None) -> dict:
     url = f"{settings.football_api_base_url}{path}"
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
@@ -22,7 +24,8 @@ async def _get(path: str, params: dict | None = None) -> dict:
                 headers={"X-Auth-Token": settings.football_api_key},
                 params=params,
             )
-        response.raise_for_status()
+            response.raise_for_status()
+
     except httpx.TimeoutException:
         logger.error("football-data.org timed out for %s", path)
         raise FootballAPIError(504, "Football data provider timed out")
@@ -49,17 +52,10 @@ async def _get(path: str, params: dict | None = None) -> dict:
             "Football data provider returned an error",
         )
 
-        upstream = exc.response.status_code
-        logger.error("football-data.org returned %s for %s", upstream, path)
-
-        if upstream == 429:
-            raise FootballAPIError(
-                503, "Football data provider rate limit reached, try again later"
-            )
-        raise FootballAPIError(502, "Football data provider returned an error")
     except httpx.RequestError:
-        logger.error("could not reach football-data.org for %s", path)
+        logger.exception("Could not reach football-data.org for %s", path)
         raise FootballAPIError(502, "Could not reach football data provider")
+
     return response.json()
 
 
@@ -68,22 +64,41 @@ async def fetch_fixtures(external_team_id: int, limit: int = 5) -> list[dict]:
         f"/teams/{external_team_id}/matches",
         {"status": "SCHEDULED", "limit": limit},
     )
+
     matches = data["matches"]
+
     logger.info(
         "football-data.org returned %d matches for team %s",
         len(matches),
         external_team_id,
     )
+
     return matches
 
 
-async def fetch_standings(competition: str = "CL") -> list[dict]:
+async def fetch_standings(
+    competition: str = "CL",
+) -> list[dict]:
     data = await _get(f"/competitions/{competition}/standings")
-    return data["standings"][0]["table"]
+
+    standings = data.get("standings", [])
+
+    if not standings or "table" not in standings[0]:
+        logger.error(
+            "No standings table returned for competition %s",
+            competition,
+        )
+        raise FootballAPIError(502, "No standings table returned by provider")
+
+    return standings[0]["table"]
 
 
 async def fetch_scorers(competition: str = "CL", limit: int = 10) -> list[dict]:
-    data = await _get(f"/competitions/{competition}/scorers", {"limit": limit})
+    data = await _get(
+        f"/competitions/{competition}/scorers",
+        {"limit": limit},
+    )
+
     return data["scorers"]
 
 
