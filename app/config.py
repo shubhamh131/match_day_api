@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     football_api_key: str
     football_api_base_url: str = "https://api.football-data.org/v4"
     log_level: str = "INFO"
+    cors_origins: str = "http://localhost:5500,http://127.0.0.1:5500"
 
     model_config = SettingsConfigDict(env_file=".env")
 

@@ -90,3 +90,14 @@ def to_standing(row: dict) -> dict:
         "goal_difference": row["goalDifference"],
         "points": row["points"],
     }
+
+
+def to_scorer(s: dict) -> dict:
+    return {
+        "player": s["player"]["name"],
+        "team": s["team"]["name"],
+        "goals": s["goals"],
+        "played": s["playedMatches"],
+        "assists": s["assists"],
+        "penalties": s["penalties"],
+    }

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import engine, get_db
 from app.football_client import (
     FootballAPIError,
@@ -18,6 +19,7 @@ from app.football_client import (
     fetch_scorers,
     fetch_standings,
     to_fixture,
+    to_scorer,
     to_standing,
 )
 from app.logging_config import setup_logging
@@ -38,7 +40,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5500", "http://127.0.0.1:5500"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -189,13 +191,7 @@ async def get_ucl_standings(limit: int = Query(20, ge=1, le=36)):
 @app.get("/competitions/ucl/scorers", response_model=list[ScorerRead])
 async def get_ucl_scorers(limit: int = Query(10, ge=1, le=20)):
     scorers = await fetch_scorers("CL", limit)
-    return [to_scorer(scorer) for scorer in scorers]
-
-
-@app.get("/competitions/{competition}/scorers", response_model=list[ScorerRead])
-async def get_scorers(competition: str = "CL", limit: int = Query(10, ge=1, le=50)):
-    scorers = await fetch_scorers(competition, limit)
-    return [to_scorer(scorer) for scorer in scorers]
+    return [to_scorer(s) for s in scorers]
 
 
 # ---------- error handlers ----------
@@ -210,16 +206,3 @@ async def football_api_error_handler(request: Request, exc: FootballAPIError):
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-
-def to_scorer(s: dict) -> dict:
-    return {
-        "player": s["player"]["name"],
-        "team": s["team"]["name"],
-        "goals": s["goals"],
-        "played": s["playedMatches"],
-        "assists": s["assists"],
-        "penalties": s["penalties"],
-    }
-
-
