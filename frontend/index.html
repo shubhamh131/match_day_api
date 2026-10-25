@@ -182,7 +182,7 @@ async function load() {
 
   const [standingsResult, scorersResult] = await Promise.allSettled([
     request("/competitions/ucl/standings?limit=36"),
-    request("/competitions/CL/scorers?limit=10"),
+    request("/competitions/ucl/scorers?limit=10"),
   ]);
 
   if (standingsResult.status === "fulfilled") {
